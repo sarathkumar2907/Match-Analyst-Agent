@@ -28,27 +28,31 @@ async def fixtures_today():
         raise HTTPException(status_code=502, detail=str(e))
     return {"date": today_str, "count": len(fixtures), "fixtures": fixtures}
 
+# ---------- Phase 2/3: full graph, routed by match status ----------
+
 class AnalyzeRequest(BaseModel):
-    team1_id: int
-    team2_id: int
-    league_id: int
-    season: int
+    fixture_id: int
+
 
 @app.post("/analyze")
 async def analyze(req: AnalyzeRequest):
     """
-    Invokes the Phase 1 graph: fetches form, head-to-head, injuries, and
-    standings for the two teams, then returns a dummy synthesized report.
-    Real LLM synthesis gets wired in during Phase 2.
+    Invokes the graph for a given fixture_id. The entry node
+    (classify_query) fetches the fixture, derives team/league/season,
+    and classifies it as pre_match / live / post_match - the graph then
+    routes to the matching path and returns an LLM-synthesized report.
     """
-    initial_state = {
-        "team1_id": req.team1_id,
-        "team2_id": req.team2_id,
-        "league_id": req.league_id,
-        "season": req.season,
-    }
+    initial_state = {"fixture_id": req.fixture_id}
 
+    try:
+        result = await match_analysis_graph.ainvoke(initial_state)
+    except APIFootballError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except ValueError as e:
+        # e.g. classify_query couldn't find the fixture
+        raise HTTPException(status_code=404, detail=str(e))
 
+    return result
 
 
 
